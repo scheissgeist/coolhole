@@ -4,21 +4,9 @@
   // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
   "version": "0.2.0",
   "configurations": [
+    // run npm run build-server and then node ${workspaceFolder}/index.js
     {
-      "name": "Attach to Running Server",
-      "type": "node",
-      "request": "attach",
-      "address": "localhost",
-      "port": 9229,
-      "skipFiles": ["<node_internals>/**"],
-      "outFiles": ["${workspaceFolder}/lib/**/*.js"],
-      "sourceMaps": true,
-      "sourceMapPathOverride": {
-        "/service/coolhole/lib/*": "${workspaceFolder}/src/*"
-      }
-    },
-    {
-      "name": "Launch Standalone (without Docker)",
+      "name": "Launch",
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/index.js",
@@ -31,8 +19,15 @@
       "env": {
         "NODE_ENV": "development"
       },
-      "sourceMaps": true,
-      "outFiles": ["${workspaceFolder}/lib/**/*.js"]
+      "sourceMaps": true
+    },
+    {
+      "name": "Attach to Docker",
+      "type": "node",
+      "request": "attach",
+      "address": "localhost",
+      "port": 9229,
+      "skipFiles": ["<node_internals>/**"]
     }
   ]
 }
