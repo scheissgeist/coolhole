@@ -749,8 +749,9 @@ function handlePostPasswordRecover(req, res) {
 
         var newpw = "";
         const avail = "abcdefgihkmnpqrstuvwxyz0123456789";
+        // Use a CSPRNG: Math.random() output can be predicted
         for (var i = 0; i < 10; i++) {
-            newpw += avail[Math.floor(Math.random() * avail.length)];
+            newpw += avail[crypto.randomInt(avail.length)];
         }
         db.users.setPassword(row.name, newpw, function (err) {
             if (err) {
