@@ -499,6 +499,29 @@ async function handleAccountProfile(req, res) {
 }
 
 /**
+ * Checks whether a raw Host header names this site: the configured root
+ * domain, a subdomain of it, or one of the configured alt domains.  Mirrors
+ * the domain check in handleLogin (web/auth.js).
+ *
+ * @param {string} host value of the Host header, possibly with a port
+ * @returns {boolean} true if the host is one of this site's domains
+ */
+function isApprovedHost(host) {
+    if (typeof host !== "string" || host.length === 0) {
+        return false;
+    }
+
+    // Strip an optional trailing port, e.g. "example.com:8080"
+    const hostname = host.replace(/:\d+$/, "").toLowerCase();
+    const rootDomain = String(Config.get("http.root-domain")).toLowerCase();
+    const altDomains = Config.get("http.alt-domains") || [];
+
+    return hostname === rootDomain ||
+            hostname.endsWith("." + rootDomain) ||
+            altDomains.some(alt => String(alt).toLowerCase() === hostname);
+}
+
+/**
  * Handles a GET request for /account/passwordreset
  */
 function handlePasswordResetPage(req, res) {
@@ -612,7 +635,26 @@ function handlePasswordReset(req, res) {
                     return;
                 }
 
-                const baseUrl = `${req.realProtocol}://${req.header("host")}`;
+                // The Host header is client-controlled.  Only build the reset
+                // link from it if it names one of this site's own domains, so
+                // an attacker can't get a reset link pointing at their server.
+                const host = req.header("host");
+                if (!isApprovedHost(host)) {
+                    LOGGER.warn(
+                        "Refusing password reset email for %s: unapproved Host header %s",
+                        name,
+                        host
+                    );
+                    sendPug(res, "account-passwordreset", {
+                        reset: false,
+                        resetEmail: email,
+                        resetErr: "Sending reset email failed.  Please contact an " +
+                                  "administrator for assistance."
+                    });
+                    return;
+                }
+
+                const baseUrl = `${req.realProtocol}://${host}`;
 
                 emailController.sendPasswordReset({
                     username: name,
@@ -754,5 +796,7 @@ module.exports = {
         app.get("/account", function (req, res) {
             res.redirect("/login");
         });
-    }
+    },
+
+    isApprovedHost
 };
