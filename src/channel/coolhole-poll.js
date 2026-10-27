@@ -275,10 +275,21 @@ CoolholePollModule.prototype.handleVote = function (user, data) {
       return;
     }
 
+    // Only users who can hold coolpoints may bet.  Bets from guests or
+    // anonymous viewers used to be accepted and then broke the payout.
+    const coolpoints = this.channel.modules.coolholepoints;
+    if (!coolpoints || !coolpoints.isUserEligibleForPoints(user.getName())) {
+      user.socket.emit("validationError", {
+        target: "#ch-poll-wager-wager",
+        message: "You must be a registered user with coolpoints to bet.",
+      });
+      return;
+    }
+
     // Check the wager against the bettor's real coolpoints balance (users
     // may go up to 10000 into debt).  This used to read user.points, which
     // is never set, so the check always passed and any wager was accepted.
-    const pointsEntry = this.channel.modules.coolholepoints?.get(user.getName());
+    const pointsEntry = coolpoints.get(user.getName());
     const balance = pointsEntry && typeof pointsEntry.points === "number" ?
       pointsEntry.points : 0;
     if (data.wager > balance + 10000) {

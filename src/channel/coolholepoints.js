@@ -897,11 +897,9 @@ class Coolpoints extends ChannelModule {
             data: userName || "(anonymous)",
             userMessage: `Error: You must join cause if you wish to participate.`,
           });
-          return new ActionResult(
-            false,
-            "User is not registered",
-            ActionStatus.InvalidUser
-          );
+          // Skip this voter only.  Returning here used to stop the payout for
+          // every voter after them.
+          continue;
         }
 
         if (option !== winningOption) {

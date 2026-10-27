@@ -19,6 +19,7 @@ describe('CoolholePollModule', () => {
                 modules: {
                     permissions: { canVote: () => true },
                     coolholepoints: {
+                        isUserEligibleForPoints: name => name in balances,
                         get: name => (name in balances ?
                             { user: name, points: balances[name] } : undefined)
                     }
@@ -73,6 +74,14 @@ describe('CoolholePollModule', () => {
             pollModule.handleVote(user, { option: 0, wager: 1e12 });
 
             assert.strictEqual(countedVotes.length, 0);
+        });
+
+        it('rejects bets from users who cannot hold coolpoints', () => {
+            user.getName = () => '';
+            pollModule.handleVote(user, { option: 0, wager: 1 });
+
+            assert.strictEqual(countedVotes.length, 0);
+            assert.strictEqual(socketEvents[0].event, 'validationError');
         });
 
         it('rejects fractional and out-of-range wagers', () => {
