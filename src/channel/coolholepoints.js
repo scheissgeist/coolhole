@@ -2,7 +2,10 @@ var ChannelModule = require("./module");
 var FilterList = require("cytubefilters");
 var LOGGER = require("@calzoneman/jsli")("coolpoints");
 var Flags = require("../flags");
-import { ActionType } from "./coolholepoints-actions-options";
+import {
+  ActionType,
+  clampActiveIntervalSeconds,
+} from "./coolholepoints-actions-options";
 
 /**
  * @typedef {Object} ActionResult
@@ -416,6 +419,10 @@ class Coolpoints extends ChannelModule {
    * @param {Number} data.points points to add or subtract (if negative)
    */
   handleApplyPointsToUser(user, data) {
+    if (!data || typeof data !== "object") {
+      return;
+    }
+
     try {
       if (!this.isUserEligibleForPoints(user.getName())) {
         this.logError({
@@ -424,7 +431,7 @@ class Coolpoints extends ChannelModule {
           returnSocket: "coolpointsFailure",
           errMsg: `User is not registered or has something wrong with their account`,
           errStack: null,
-          data: userName || "(anonymous)",
+          data: user.getName() || "(anonymous)",
           userMessage: `Error: You must join cause if you wish to participate.`,
         });
         return;
@@ -432,6 +439,20 @@ class Coolpoints extends ChannelModule {
 
       const { targetName, points } = data;
       if (!this.canUpdateOthersPoints(user, "applyPointsToUser")) return;
+
+      // NaN, Infinity or a string here would corrupt the target's balance
+      if (!Number.isSafeInteger(points)) {
+        this.logError({
+          userName: user.getName(),
+          callingFunction: "applyPointsToUser",
+          returnSocket: "coolpointsFailure",
+          errMsg: `Invalid points value`,
+          errStack: null,
+          data: { targetName, points },
+          userMessage: `Error: Points must be a whole number`,
+        });
+        return;
+      }
 
       const target = this.get(targetName);
       if (!target) {
@@ -897,11 +918,9 @@ class Coolpoints extends ChannelModule {
             data: userName || "(anonymous)",
             userMessage: `Error: You must join cause if you wish to participate.`,
           });
-          return new ActionResult(
-            false,
-            "User is not registered",
-            ActionStatus.InvalidUser
-          );
+          // Skip this voter only.  Returning here used to stop the payout for
+          // every voter after them.
+          continue;
         }
 
         if (option !== winningOption) {
@@ -1114,8 +1133,10 @@ class Coolpoints extends ChannelModule {
       this.channel.modules.coolholeactionspoints.get("active");
     // Multiply by 1000 to convert to milliseconds
     const activeInterval =
-      activeActionData.options.find((opt) => opt.optionName === "interval")
-        .optionValue * 1000;
+      clampActiveIntervalSeconds(
+        activeActionData.options.find((opt) => opt.optionName === "interval")
+          .optionValue
+      ) * 1000;
     this.userActiveIntervalIds[user.getName()] = setInterval(() => {
       // If the channel is dead or malformed, consider this interval dead
       if (
@@ -1131,10 +1152,11 @@ class Coolpoints extends ChannelModule {
 
       // Has the interval changed? If so, clear and restart
       const curInterval =
-        this.channel.modules.coolholeactionspoints
-          .get("active")
-          .options.find((opt) => opt.optionName === "interval").optionValue *
-        1000;
+        clampActiveIntervalSeconds(
+          this.channel.modules.coolholeactionspoints
+            .get("active")
+            .options.find((opt) => opt.optionName === "interval").optionValue
+        ) * 1000;
       if (curInterval !== activeInterval) {
         this.channel.logger.log(
           `Interval has changed. Clearing interval and restarting for ${user.getName()}`

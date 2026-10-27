@@ -1,12 +1,34 @@
 var ChannelModule = require("./module");
 const LOGGER = require("@calzoneman/jsli")("coolpoints-actions");
 var Flags = require("../flags");
+import clone from "clone";
 
 const ActionType = {
   Earnings: "Earnings",
   Losses: "Losses",
   Expenditures: "Expenditures",
   Statuses: "Statuses",
+};
+
+// Bounds for moderator-set coolpoints options (see handleSetCpOptions)
+const MIN_ACTIVE_INTERVAL_SECONDS = 10;
+const MAX_ACTIVE_INTERVAL_SECONDS = 86400;
+const MAX_OPTION_POINTS = 1000000000;
+const DEFAULT_ACTIVE_INTERVAL_SECONDS = 100;
+
+/**
+ * Keeps a stored "active" interval inside safe bounds, so a bad value saved
+ * before validation existed can't run the points timer constantly.
+ * @param {*} secs interval in seconds, as stored in channel data
+ * @returns {Number} interval in seconds within the allowed range
+ */
+const clampActiveIntervalSeconds = (secs) => {
+  const num = Number(secs);
+  if (!Number.isFinite(num)) return DEFAULT_ACTIVE_INTERVAL_SECONDS;
+  return Math.min(
+    MAX_ACTIVE_INTERVAL_SECONDS,
+    Math.max(MIN_ACTIVE_INTERVAL_SECONDS, num)
+  );
 };
 
 /**
@@ -401,19 +423,21 @@ class CoolholePointsActionsOptionsModule extends ChannelModule {
   load(data) {
     if ("coolpointsActions" in data) {
       // Compare actionDefaults and data.coolpointsActions and push any new default actions to data.coolpointsActions
+      // Defaults are copied, never shared: every channel must get its own
+      // objects, or setting an option in one channel changes it for all.
       const defaultActions = this.actionsDefault;
       const newActions = defaultActions.filter((defaultAction) => {
         return !data.coolpointsActions.some(
           (action) => action.name === defaultAction.name
         );
       });
-      data.coolpointsActions.push(...newActions);
+      data.coolpointsActions.push(...clone(newActions));
 
       this.coolpointsActions = data.coolpointsActions;
       this.dirty = false;
     } else {
-      //otherwise, just start with defaults
-      this.coolpointsActions = this.actionsDefault;
+      //otherwise, just start with (a copy of) the defaults
+      this.coolpointsActions = clone(this.actionsDefault);
 
       //set dirty flag so bgtask will save it
       this.dirty = true;
@@ -506,7 +530,7 @@ class CoolholePointsActionsOptionsModule extends ChannelModule {
    * @param {*} data.optionValue value of the option within the action we want updated
    */
   handleSetCpOptions(user, data) {
-    if (typeof data !== "object") {
+    if (!data || typeof data !== "object") {
       return;
     }
 
@@ -525,16 +549,49 @@ class CoolholePointsActionsOptionsModule extends ChannelModule {
 
     let sendUpdate = false;
 
-    const isValidPoints = (pts) => !!pts && !Number.isNaN(pts);
+    // Parses a whole number sent as a number or numeric string; null if not.
+    const parseWholeNumber = (val) => {
+      if (typeof val !== "number" && typeof val !== "string") return null;
+      if (!/^\s*-?\d+\s*$/.test(String(val))) return null;
+      const num = Number(val);
+      return Number.isSafeInteger(num) ? num : null;
+    };
+    const isValidPoints = (actionName, pts) => {
+      const num = parseWholeNumber(pts);
+      if (num === null || num === 0 || Math.abs(num) > MAX_OPTION_POINTS) {
+        return false;
+      }
+      // Only debt-level thresholds (Statuses) may be negative.  A negative
+      // cost or reward would let a moderator mint or drain points.
+      const action = this.coolpointsActions.find((a) => a.name === actionName);
+      return num > 0 || action?.actionType === ActionType.Statuses;
+    };
+    // Interval is in seconds.  Too small a value (or one past Node's timer
+    // limit, which Node treats as 1 ms) runs the points timer constantly for
+    // every user in the channel and can stall the whole server.
+    const isValidInterval = (secs) => {
+      const num = parseWholeNumber(secs);
+      return num !== null &&
+        num >= MIN_ACTIVE_INTERVAL_SECONDS &&
+        num <= MAX_ACTIVE_INTERVAL_SECONDS;
+    };
     const targetBuilder = (action, option) => `#cp-${action}-${option}`;
     const isValidInput = (actionName, optionName, optionValue) => {
       switch (optionName) {
         case "points":
         case "interval":
-          if (!isValidPoints(optionValue)) {
+          if (optionName === "points" && !isValidPoints(actionName, optionValue)) {
             user.socket.emit("validationError", {
               target: targetBuilder(actionName, optionName),
-              message: `Input must be a number, not "${optionValue}"`,
+              message: `Input must be a whole number (non-zero, at most ${MAX_OPTION_POINTS}; only debt levels may be negative), not "${optionValue}"`,
+            });
+            return false;
+          }
+
+          if (optionName === "interval" && !isValidInterval(optionValue)) {
+            user.socket.emit("validationError", {
+              target: targetBuilder(actionName, optionName),
+              message: `Interval must be a whole number of seconds between ${MIN_ACTIVE_INTERVAL_SECONDS} and ${MAX_ACTIVE_INTERVAL_SECONDS}, not "${optionValue}"`,
             });
             return false;
           }
@@ -547,8 +604,8 @@ class CoolholePointsActionsOptionsModule extends ChannelModule {
         case "enabled":
           // TODO: Validate more? Seems unnecessary to begin with but w/e
           if (
-            typeof optionValue !== Boolean &&
-            !/(true|false)/i.test(optionValue)
+            typeof optionValue !== "boolean" &&
+            !/^(true|false)$/i.test(optionValue)
           ) {
             user.socket.emit("validationError", {
               target: targetBuilder(actionName, optionName),
@@ -572,7 +629,8 @@ class CoolholePointsActionsOptionsModule extends ChannelModule {
           return parseInt(val) || 0;
 
         case "enabled":
-          return !!val;
+          // "false" (a string) must mean false, not true
+          return val === true || /^true$/i.test(val);
 
         default:
           // If we don't know it, how can we normalize?
@@ -603,3 +661,4 @@ module.exports = CoolholePointsActionsOptionsModule;
 module.exports.cpOptsDefaults = CP_OPTS_DEFAULTS;
 module.exports.cpOptTypes = cpOptTypes;
 module.exports.ActionType = ActionType;
+module.exports.clampActiveIntervalSeconds = clampActiveIntervalSeconds;

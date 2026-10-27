@@ -8,6 +8,11 @@ var Flags = require("./flags");
 import { EventEmitter } from 'events';
 import Logger from './logger';
 import net from 'net';
+import {
+    loginThrottle,
+    isCountedLoginFailure,
+    LOGIN_THROTTLE_MESSAGE
+} from './util/login-throttle';
 
 const LOGGER = require('@calzoneman/jsli')('user');
 
@@ -320,8 +325,21 @@ User.prototype.login = function (name, pw) {
     var self = this;
     self.setFlag(Flags.U_LOGGING_IN);
 
+    if (loginThrottle.isThrottled(self.realip)) {
+        LOGGER.warn("Throttled login attempt for %s from %s", name, self.realip);
+        self.socket.emit("login", {
+            success: false,
+            error: LOGIN_THROTTLE_MESSAGE
+        });
+        self.clearFlag(Flags.U_LOGGING_IN);
+        return;
+    }
+
     db.users.verifyLogin(name, pw, function (err, user) {
         if (err) {
+            if (isCountedLoginFailure(err)) {
+                loginThrottle.recordFailure(self.realip);
+            }
             if (err === "Invalid username/password combination") {
                 Logger.eventlog.log("[loginfail] Login failed (bad password): " + name
                                   + "@" + self.realip);

@@ -13,6 +13,11 @@ var Config = require("../config");
 var url = require("url");
 var session = require("../session");
 var csrf = require("./csrf");
+const {
+    loginThrottle,
+    isCountedLoginFailure,
+    LOGIN_THROTTLE_MESSAGE
+} = require("../util/login-throttle");
 
 const LOGGER = require('@calzoneman/jsli')('web/auth');
 
@@ -70,8 +75,20 @@ function handleLogin(req, res) {
 
     password = password.substring(0, 100);
 
+    if (loginThrottle.isThrottled(req.realIP)) {
+        LOGGER.warn("Throttled login attempt for %s from %s", name, req.realIP);
+        sendPug(res, "login", {
+            loggedIn: false,
+            loginError: LOGIN_THROTTLE_MESSAGE
+        });
+        return;
+    }
+
     db.users.verifyLogin(name, password, function (err, user) {
         if (err) {
+            if (isCountedLoginFailure(err)) {
+                loginThrottle.recordFailure(req.realIP);
+            }
             if (err === "Invalid username/password combination") {
                 Logger.eventlog.log("[loginfail] Login failed (bad password): " + name
                                   + "@" + req.realIP);

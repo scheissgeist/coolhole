@@ -259,8 +259,15 @@ CoolholePollModule.prototype.handleVote = function (user, data) {
     return;
   }
 
+  // No poll open: nothing to vote on (and this.poll.gamble below would throw)
+  if (!this.poll) {
+    return;
+  }
+
   if (this.poll.gamble) {
-    if (isNaN(data.wager) || data.wager < 1) {
+    // The client always sends a whole number (parseInt), so reject anything
+    // else: fractions, and huge values that overflow the pot to Infinity.
+    if (!Number.isSafeInteger(data.wager) || data.wager < 1) {
       user.socket.emit("validationError", {
         target: "#ch-poll-wager-wager",
         message: `Invalid wager amount of "${data.wager}"`,
@@ -268,7 +275,24 @@ CoolholePollModule.prototype.handleVote = function (user, data) {
       return;
     }
 
-    if (data.wager > user.points + 10000) {
+    // Only users who can hold coolpoints may bet.  Bets from guests or
+    // anonymous viewers used to be accepted and then broke the payout.
+    const coolpoints = this.channel.modules.coolholepoints;
+    if (!coolpoints || !coolpoints.isUserEligibleForPoints(user.getName())) {
+      user.socket.emit("validationError", {
+        target: "#ch-poll-wager-wager",
+        message: "You must be a registered user with coolpoints to bet.",
+      });
+      return;
+    }
+
+    // Check the wager against the bettor's real coolpoints balance (users
+    // may go up to 10000 into debt).  This used to read user.points, which
+    // is never set, so the check always passed and any wager was accepted.
+    const pointsEntry = coolpoints.get(user.getName());
+    const balance = pointsEntry && typeof pointsEntry.points === "number" ?
+      pointsEntry.points : 0;
+    if (data.wager > balance + 10000) {
       user.socket.emit("validationError", {
         target: "#ch-poll-wager-wager",
         message: `You do not have enough points to wager "${data.wager}"`,
