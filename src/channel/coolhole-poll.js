@@ -259,6 +259,11 @@ CoolholePollModule.prototype.handleVote = function (user, data) {
     return;
   }
 
+  // No poll open: nothing to vote on (and this.poll.gamble below would throw)
+  if (!this.poll) {
+    return;
+  }
+
   if (this.poll.gamble) {
     if (isNaN(data.wager) || data.wager < 1) {
       user.socket.emit("validationError", {
