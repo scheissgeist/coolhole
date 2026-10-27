@@ -265,7 +265,9 @@ CoolholePollModule.prototype.handleVote = function (user, data) {
   }
 
   if (this.poll.gamble) {
-    if (isNaN(data.wager) || data.wager < 1) {
+    // The client always sends a whole number (parseInt), so reject anything
+    // else: fractions, and huge values that overflow the pot to Infinity.
+    if (!Number.isSafeInteger(data.wager) || data.wager < 1) {
       user.socket.emit("validationError", {
         target: "#ch-poll-wager-wager",
         message: `Invalid wager amount of "${data.wager}"`,
@@ -273,7 +275,13 @@ CoolholePollModule.prototype.handleVote = function (user, data) {
       return;
     }
 
-    if (data.wager > user.points + 10000) {
+    // Check the wager against the bettor's real coolpoints balance (users
+    // may go up to 10000 into debt).  This used to read user.points, which
+    // is never set, so the check always passed and any wager was accepted.
+    const pointsEntry = this.channel.modules.coolholepoints?.get(user.getName());
+    const balance = pointsEntry && typeof pointsEntry.points === "number" ?
+      pointsEntry.points : 0;
+    if (data.wager > balance + 10000) {
       user.socket.emit("validationError", {
         target: "#ch-poll-wager-wager",
         message: `You do not have enough points to wager "${data.wager}"`,
