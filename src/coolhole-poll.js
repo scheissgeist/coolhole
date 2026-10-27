@@ -2,10 +2,15 @@ const link =
   /(\w+:\/\/(?:[^:/[\]\s]+|\[[0-9a-f:]+\])(?::\d+)?(?:\/[^/\s]*)*)/gi;
 const XSS = require("./xss");
 
+// Only these URL schemes become clickable links.  Anything else (notably
+// javascript://) is left as plain text, matching what chat allows.
+const LINKABLE_SCHEME = /^(https?|ftp):\/\//i;
+
 function sanitizedWithLinksReplaced(text) {
-  return XSS.sanitizeText(text).replace(
-    link,
-    '<a href="$1" target="_blank" rel="noopener noreferer">$1</a>'
+  return XSS.sanitizeText(text).replace(link, (url) =>
+    LINKABLE_SCHEME.test(url)
+      ? `<a href="${url}" target="_blank" rel="noopener noreferer">${url}</a>`
+      : url
   );
 }
 class CoolholePoll {
