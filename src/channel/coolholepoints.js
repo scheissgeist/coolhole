@@ -2,7 +2,10 @@ var ChannelModule = require("./module");
 var FilterList = require("cytubefilters");
 var LOGGER = require("@calzoneman/jsli")("coolpoints");
 var Flags = require("../flags");
-import { ActionType } from "./coolholepoints-actions-options";
+import {
+  ActionType,
+  clampActiveIntervalSeconds,
+} from "./coolholepoints-actions-options";
 
 /**
  * @typedef {Object} ActionResult
@@ -1112,8 +1115,10 @@ class Coolpoints extends ChannelModule {
       this.channel.modules.coolholeactionspoints.get("active");
     // Multiply by 1000 to convert to milliseconds
     const activeInterval =
-      activeActionData.options.find((opt) => opt.optionName === "interval")
-        .optionValue * 1000;
+      clampActiveIntervalSeconds(
+        activeActionData.options.find((opt) => opt.optionName === "interval")
+          .optionValue
+      ) * 1000;
     this.userActiveIntervalIds[user.getName()] = setInterval(() => {
       // If the channel is dead or malformed, consider this interval dead
       if (
@@ -1129,10 +1134,11 @@ class Coolpoints extends ChannelModule {
 
       // Has the interval changed? If so, clear and restart
       const curInterval =
-        this.channel.modules.coolholeactionspoints
-          .get("active")
-          .options.find((opt) => opt.optionName === "interval").optionValue *
-        1000;
+        clampActiveIntervalSeconds(
+          this.channel.modules.coolholeactionspoints
+            .get("active")
+            .options.find((opt) => opt.optionName === "interval").optionValue
+        ) * 1000;
       if (curInterval !== activeInterval) {
         this.channel.logger.log(
           `Interval has changed. Clearing interval and restarting for ${user.getName()}`
