@@ -1,6 +1,7 @@
 var ChannelModule = require("./module");
 const LOGGER = require("@calzoneman/jsli")("coolpoints-actions");
 var Flags = require("../flags");
+import clone from "clone";
 
 const ActionType = {
   Earnings: "Earnings",
@@ -422,19 +423,21 @@ class CoolholePointsActionsOptionsModule extends ChannelModule {
   load(data) {
     if ("coolpointsActions" in data) {
       // Compare actionDefaults and data.coolpointsActions and push any new default actions to data.coolpointsActions
+      // Defaults are copied, never shared: every channel must get its own
+      // objects, or setting an option in one channel changes it for all.
       const defaultActions = this.actionsDefault;
       const newActions = defaultActions.filter((defaultAction) => {
         return !data.coolpointsActions.some(
           (action) => action.name === defaultAction.name
         );
       });
-      data.coolpointsActions.push(...newActions);
+      data.coolpointsActions.push(...clone(newActions));
 
       this.coolpointsActions = data.coolpointsActions;
       this.dirty = false;
     } else {
-      //otherwise, just start with defaults
-      this.coolpointsActions = this.actionsDefault;
+      //otherwise, just start with (a copy of) the defaults
+      this.coolpointsActions = clone(this.actionsDefault);
 
       //set dirty flag so bgtask will save it
       this.dirty = true;

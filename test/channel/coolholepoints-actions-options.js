@@ -79,6 +79,50 @@ describe('CoolholePointsActionsOptionsModule', () => {
         });
     });
 
+    describe('#load', () => {
+        const makeModule = () => {
+            const optsModule = new CoolholePointsActionsOptionsModule({
+                uniqueName: 'testChannel',
+                modules: {
+                    permissions: { canSetOptions: () => true }
+                },
+                users: [],
+                broadcastAll() {}
+            });
+            optsModule.load({});
+            return optsModule;
+        };
+
+        it('does not share default options between channels', () => {
+            const channelA = makeModule();
+            const channelB = makeModule();
+
+            channelA.handleSetCpOptions(
+                { getName: () => 'owner', socket: { emit() {} } },
+                { actionName: 'highlight', optionName: 'enabled', optionValue: false }
+            );
+
+            const enabledIn = optsModule => optsModule.get('highlight').options
+                .find(opt => opt.optionName === 'enabled').optionValue;
+            assert.strictEqual(enabledIn(channelA), false);
+            assert.strictEqual(enabledIn(channelB), true);
+        });
+
+        it('copies newly added default actions into saved channel data', () => {
+            const saved = { coolpointsActions: [] };
+            const optsModule = new CoolholePointsActionsOptionsModule({
+                uniqueName: 'testChannel',
+                modules: {}
+            });
+            optsModule.load(saved);
+
+            assert.notStrictEqual(
+                saved.coolpointsActions[0],
+                CoolholePointsActionsOptionsModule.cpOptsDefaults[0]
+            );
+        });
+    });
+
     describe('#clampActiveIntervalSeconds', () => {
         it('keeps stored values inside the allowed range', () => {
             assert.strictEqual(clampActiveIntervalSeconds(100), 100);
