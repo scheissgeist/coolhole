@@ -419,6 +419,10 @@ class Coolpoints extends ChannelModule {
    * @param {Number} data.points points to add or subtract (if negative)
    */
   handleApplyPointsToUser(user, data) {
+    if (!data || typeof data !== "object") {
+      return;
+    }
+
     try {
       if (!this.isUserEligibleForPoints(user.getName())) {
         this.logError({
@@ -427,7 +431,7 @@ class Coolpoints extends ChannelModule {
           returnSocket: "coolpointsFailure",
           errMsg: `User is not registered or has something wrong with their account`,
           errStack: null,
-          data: userName || "(anonymous)",
+          data: user.getName() || "(anonymous)",
           userMessage: `Error: You must join cause if you wish to participate.`,
         });
         return;
@@ -435,6 +439,20 @@ class Coolpoints extends ChannelModule {
 
       const { targetName, points } = data;
       if (!this.canUpdateOthersPoints(user, "applyPointsToUser")) return;
+
+      // NaN, Infinity or a string here would corrupt the target's balance
+      if (!Number.isSafeInteger(points)) {
+        this.logError({
+          userName: user.getName(),
+          callingFunction: "applyPointsToUser",
+          returnSocket: "coolpointsFailure",
+          errMsg: `Invalid points value`,
+          errStack: null,
+          data: { targetName, points },
+          userMessage: `Error: Points must be a whole number`,
+        });
+        return;
+      }
 
       const target = this.get(targetName);
       if (!target) {

@@ -2,6 +2,56 @@ const assert = require('assert');
 const Coolpoints = require('../../lib/channel/coolholepoints');
 
 describe('Coolpoints', () => {
+    describe('#handleApplyPointsToUser', () => {
+        let coolpoints;
+        let added;
+        let errors;
+
+        beforeEach(() => {
+            added = [];
+            errors = [];
+            coolpoints = new Coolpoints({
+                uniqueName: 'testChannel',
+                modules: {},
+                logger: { log() {} },
+                broadcastAll() {}
+            });
+            coolpoints.logError = err => errors.push(err);
+            coolpoints.isUserEligibleForPoints = name => name === 'admin';
+            coolpoints.canUpdateOthersPoints = () => true;
+            coolpoints.get = name => ({ user: name, points: 0 });
+            coolpoints.add = (name, points) => added.push([name, points]);
+        });
+
+        const user = name => ({ getName: () => name, socket: { emit() {} } });
+
+        it('does not throw for a guest with no payload', () => {
+            assert.doesNotThrow(() => {
+                coolpoints.handleApplyPointsToUser(user(''), undefined);
+                coolpoints.handleApplyPointsToUser(user(''), {});
+            });
+            assert.strictEqual(errors.length, 1);
+        });
+
+        it('rejects non-integer points', () => {
+            for (const points of [Infinity, NaN, '5', 1.5]) {
+                coolpoints.handleApplyPointsToUser(user('admin'), {
+                    targetName: 'bob', points
+                });
+            }
+
+            assert.deepStrictEqual(added, []);
+        });
+
+        it('applies whole-number points', () => {
+            coolpoints.handleApplyPointsToUser(user('admin'), {
+                targetName: 'bob', points: 5
+            });
+
+            assert.deepStrictEqual(added, [['bob', 5]]);
+        });
+    });
+
     describe('#payoutPoll', () => {
         let coolpoints;
         let changes;
